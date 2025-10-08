@@ -15,7 +15,7 @@ internal struct VideoVariables {
     var range: CMTimeRange?
 
     /// Frame modifier
-    var sampleHandler: ((CMSampleBuffer) -> Void)?
+    var sampleHandler: ((CMSampleBuffer) -> [CMSampleBuffer])?
 
     /// Require to encode
     var hasChanges = true

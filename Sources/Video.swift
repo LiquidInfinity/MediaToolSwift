@@ -279,12 +279,41 @@ public struct VideoTool {
             input: AVAssetWriterInput,
             output: AVAssetReaderOutput,
             queue: DispatchQueue,
-            sampleHandler: ((CMSampleBuffer) -> Void)? = nil
+            sampleHandler: ((CMSampleBuffer) -> [CMSampleBuffer])? = nil
         ) {
             group.enter()
             processes += 1
+            var pendingSamples: [CMSampleBuffer] = []
+
+            func writerFailure() {
+                error = writer.error
+                input.markAsFinished()
+                group.leave()
+            }
+
+            func updateProgress(_ sample: CMSampleBuffer) {
+                if input.mediaType == .video {
+                    // Get current time stamp (proceed asynchronously)
+                    let timeStamp = sample.presentationTimeStamp
+                    // Update progress
+                    progress.update(timeStamp)
+                }
+            }
+
             input.requestMediaDataWhenReady(on: queue) {
                 while input.isReadyForMoreMediaData, !task.isCancelled {
+                    // Process queued sample
+                    if !pendingSamples.isEmpty {
+                        let sample = pendingSamples.removeFirst()
+                        if !input.append(sample), writer.status == .failed {
+                            writerFailure()
+                            return
+                        }
+
+                        updateProgress(sample)
+                        return
+                    }
+
                     // Read
                     guard let sample = output.copyNextSampleBuffer() else {
                         if reader.status == .failed {
@@ -300,24 +329,25 @@ public struct VideoTool {
                         return
                     }
 
-                    // Write
-                    if let handler = sampleHandler {
-                        handler(sample)
-                    } else if !input.append(sample), writer.status == .failed {
-                        // Writing fails
-                        error = writer.error
-                        input.markAsFinished()
-                        group.leave()
+                    // Process with handler or use original
+                    let samples = sampleHandler?(sample) ?? [sample]
+                    guard !samples.isEmpty else {
+                        continue // drop frame
+                    }
+
+                    // Write single sample
+                    if !input.append(samples[0]), writer.status == .failed {
+                        writerFailure()
                         return
                     }
 
-                    // Progress
-                    if input.mediaType == .video {
-                        // Get current time stamp (proceed asynchronously)
-                        let timeStamp = sample.presentationTimeStamp
-                        // Update progress
-                        progress.update(timeStamp)
+                    // Queue any remaining samples
+                    if samples.count > 1 {
+                        pendingSamples.append(contentsOf: samples[1...])
                     }
+
+                    // Progress
+                    updateProgress(sample)
                 }
 
                 if task.isCancelled {
@@ -976,19 +1006,15 @@ public struct VideoTool {
         }
 
         /// Custom sample buffer handler (frame rate adjustment or sample processing)
-        func makeVideoSampleHandler() -> ((CMSampleBuffer) -> Void)? {
+        func makeVideoSampleHandler() -> ((CMSampleBuffer) -> [CMSampleBuffer] )? {
             // Sample writer
-            let append: (CMSampleBuffer) -> Void = { sample in
+            let append: (CMSampleBuffer) -> [CMSampleBuffer] = { sample in
                 autoreleasepool {
-                    let timeStamp = CMSampleBufferGetPresentationTimeStamp(sample)
-
-                    var sampleBuffer: CMSampleBuffer?
-                    var pixelBuffer: CVPixelBuffer?
-
                     switch frameProcessor {
                     case .image, .pixelBuffer: // .cgImage, .vImage
                         // Use unified processor handler
-                        pixelBuffer = CVPixelBuffer.processSampleBuffer(
+                        let timeStamp = CMSampleBufferGetPresentationTimeStamp(sample)
+                        let pixelBuffer = CVPixelBuffer.processSampleBuffer(
                             sample,
                             presentationTimeStamp: timeStamp,
                             processor: frameProcessor!,
@@ -1000,21 +1026,32 @@ public struct VideoTool {
                             colorInfo: colorInfo,
                             context: context
                         )
+
+                        // Append to write queue or drop
+                        if let pixelBuffer = pixelBuffer {
+                            variables.videoInputAdaptor!.append(pixelBuffer, withPresentationTime: timeStamp)
+                        } else {
+                            // Drop the frame
+                        }
+                        return [] // return empty, already appended to adaptor
                     case .sampleBuffer(let processor):
+                        if let sampleBuffer = processor(sample) {
+                            return [sampleBuffer]
+                        } else {
+                            return [] // drop frame
+                        }
+                    case .sampleBufferToMany(let processor):
                         // Use updated sample buffer
-                        sampleBuffer = processor(sample)
+                        let sampleBuffers = processor(sample)
+                        if !sampleBuffers.isEmpty {
+                            // Add all frames
+                            return sampleBuffers
+                        } else {
+                            return [] // drop frame
+                        }
                     default:
                         // Use source sample buffer
-                        sampleBuffer = sample
-                    }
-
-                    // Append to write queue or drop
-                    if let pixelBuffer = pixelBuffer {
-                        variables.videoInputAdaptor!.append(pixelBuffer, withPresentationTime: timeStamp)
-                    } else if let sampleBuffer = sampleBuffer {
-                        variables.videoInput.append(sampleBuffer)
-                    } else {
-                        // Drop the frame
+                        return [sample]
                     }
                 }
             }
@@ -1053,17 +1090,17 @@ public struct VideoTool {
 
                 guard frames.contains(frameIndex) else {
                     // Drop current frame
-                    return
+                    return []
                 }
 
                 // Update frame timing and write
-                autoreleasepool {
+                return autoreleasepool { () -> [CMSampleBuffer] in
                     // Get sample timing info
                     var timingInfo: CMSampleTimingInfo = CMSampleTimingInfo()
 
                     let getTimingInfoStatus = CMSampleBufferGetSampleTimingInfo(sample, at: 0, timingInfoOut: &timingInfo)
                     // Expect success
-                    guard getTimingInfoStatus == noErr else { return }
+                    guard getTimingInfoStatus == noErr else { return [] }
 
                     // Set desired frame rate via duration
                     timingInfo.duration = frameDuration
@@ -1095,7 +1132,9 @@ public struct VideoTool {
                     )
 
                     if copySampleBufferStatus == noErr {
-                        append(buffer)
+                        return append(buffer)
+                    } else {
+                        return [] // drop frame
                     }
                 }
             }
