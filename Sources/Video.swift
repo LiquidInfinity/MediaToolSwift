@@ -531,7 +531,20 @@ public struct VideoTool {
         let orientation = videoTrack.orientation
         variables.orientation = orientation
         let naturalSize = videoTrack.naturalSize
-        let sourceVideoSize = naturalSize.oriented(orientation)
+
+        // Get encoded pixel dimensions to handle videos with non-square pixel aspect ratio (PAR/SAR)
+        let dimensions = CMVideoFormatDescriptionGetDimensions(videoDesc)
+        let encodedSize = CGSize(width: Int(dimensions.width), height: Int(dimensions.height))
+
+        let sourceVideoSize: CGSize
+        if encodedSize != naturalSize {
+            // Video has non-square PAR
+            // Use encoded pixel dimensions to preserve correct aspect ratio after scaling
+            sourceVideoSize = encodedSize.oriented(orientation)
+        } else {
+            // Video has square pixels (PAR 1:1) or naturalSize already accounts for orientation
+            sourceVideoSize = naturalSize.oriented(orientation)
+        }
 
         // Video settings
         var videoCompressionSettings: [String: Any] = [:]
