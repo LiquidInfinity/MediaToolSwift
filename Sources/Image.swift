@@ -810,9 +810,9 @@ public struct ImageTool {
             method: loadingMethod,
             isAnimated: isAnimated
         )
-        
+
         // Load HDR gain map if applicable, static only and heif output
-        if !isAnimated, format == .heif || format == .heif10 {
+        if !isAnimated, format == .heif || format == .heif10 || format == .heic {
             primaryFrame.gainMap = primaryFrame.loadGainMap(url: source, properties: primaryProperties)
         }
 
@@ -1193,6 +1193,10 @@ public struct ImageTool {
         if format == .png || format == .tiff, (frames.count == 1 && isHDR == true) || primaryCIImage != nil {
             imageFormat = nil
         }
+        // HEIC gain map support via CIContext writer
+        if format == .heic, primaryFrame.gainMap != nil {
+            imageFormat = nil
+        }
 
         switch imageFormat {
         case .heif, .heif10, nil:
@@ -1253,7 +1257,7 @@ public struct ImageTool {
                 }
 
                 switch format {
-                case .heif:
+                case .heif, .heic:
                     let pixelFormat = CIFormat.RGBA8
                     let colorSpace = CGColorSpace(name: CGColorSpace.displayP3)!
 
