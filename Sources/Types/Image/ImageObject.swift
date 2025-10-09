@@ -9,6 +9,27 @@ import Foundation
 
 /// Decoded Image
 public struct Image {
+    /// Public initializer
+    public init(
+        frames: [ImageFrame],
+        info: ImageInfo,
+        format: ImageFormat?,
+        size: CGSize,
+        primaryProperties: [CFString : Any]?,
+        primaryIndex: Int,
+        hasAlpha: Bool,
+        processingMethod: ImageFramework
+    ) {
+        self.frames = frames
+        self.info = info
+        self.format = format
+        self.size = size
+        self.primaryProperties = primaryProperties
+        self.primaryIndex = primaryIndex
+        self.hasAlpha = hasAlpha
+        self.processingMethod = processingMethod
+    }
+
     /// Image frames, single for static image
     public let frames: [ImageFrame]
 
