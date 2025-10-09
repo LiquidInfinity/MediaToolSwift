@@ -13,6 +13,17 @@ public enum RotationFill {
     /// Fill extended area with color, use transparent (0, 0, 0, 0) for clear background
     /// Warning: Black color may appear instead of transparent for some formats (for example non-HEIF images without alpha channel)
     case color(alpha: UInt8, red: UInt8, green: UInt8, blue: UInt8)
+
+    // Scale blur kernel
+    internal func scaled(by scale: CGFloat) -> RotationFill {
+        guard scale != 1.0 else { return self }
+        switch self {
+        case .blur(let kernel):
+            return .blur(kernel: UInt32(CGFloat(kernel) * scale))
+        case .crop, .color:
+            return self
+        }
+    }
 }
 
 /// Image processor type
@@ -101,5 +112,61 @@ internal extension Set where Element == ImageOperation {
     /// Determine if any `ImageOperation` is rotation and the angle isn't multiply of 90 degree
     var containsRotationByCustomAngle: Bool {
         return self.contains(where: { $0.isRotationByCustomAngle })
+    }
+
+    /// Scale operations for gain map processing
+    func scaled(by scale: CGFloat) -> Set<ImageOperation> {
+        guard scale != 1.0 else { return self }
+        return Set(self.compactMap { operation in
+            switch operation {
+            case let .rotate(angle, fill):
+                return .rotate(angle, fill: fill.scaled(by: scale))
+            case .flip, .mirror:
+                return operation // no scaling needed
+            case .imageProcessing(let processor):
+                return nil // drop custom processor when scaling
+                /*// Wrap processor to scale before and after
+                return .imageProcessing({ ciImage, cgImage, orientation, index in
+                    let scaleFactor = 1.0 / scale
+
+                    // Scale whichever input is provided
+                    if let ciImage = ciImage {
+                        // `CIImage` path
+                        let scaled = ciImage.resizing(to: CGSize(
+                            width: ciImage.extent.width * scaleFactor,
+                            height: ciImage.extent.height * scaleFactor
+                        ))
+                        let processed = processor(scaled, nil, orientation, index)
+
+                        // Scale back result
+                        if let processedCIImage = processed.ciImage {
+                            let rescaled = processedCIImage.resizing(to: CGSize(
+                                width: processedCIImage.extent.width * scale,
+                                height: processedCIImage.extent.height * scale
+                            ))
+                            return (ciImage: rescaled, cgImage: nil)
+                        }
+                    } else if let cgImage = cgImage {
+                        // `CGImage` path
+                        let scaled = cgImage.resizing(to: CGSize(
+                            width: CGFloat(cgImage.width) * scaleFactor,
+                            height: CGFloat(cgImage.height) * scaleFactor
+                        ))
+                        let processed = processor(nil, scaled, orientation, index)
+
+                        // Scale back result
+                        if let processedCGImage = processed.cgImage {
+                            let rescaled = processedCGImage.resizing(to: CGSize(
+                                width: CGFloat(processedCGImage.width) * scale,
+                                height: CGFloat(processedCGImage.height) * scale
+                            ))
+                            return (ciImage: nil, cgImage: rescaled)
+                        }
+                    }
+
+                    return (ciImage: nil, cgImage: nil)
+                })*/
+            }
+        })
     }
 }

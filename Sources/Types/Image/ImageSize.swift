@@ -14,6 +14,20 @@ public enum ImageSize: Equatable {
     /// Cropping size and alignment, `fit` primarly used in video thumbnails
     case crop(fit: CGSize? = nil, options: Crop)
 
+    /// Create scaled ImageSize, all dimensions are multiplied by scale factor
+    internal func scaled(by scale: CGFloat) -> ImageSize {
+        guard scale != 1.0 else { return self }
+        switch self {
+        case .original:
+            return .original
+        case .fit(let size):
+            return .fit(CGSize(width: size.width * scale, height: size.height * scale))
+        case .crop(let fitSize, let options):
+            let scaledFitSize = fitSize.map { CGSize(width: $0.width * scale, height: $0.height * scale) }
+            return .crop(fit: scaledFitSize, options: options.scaled(by: scale))
+        }
+    }
+
     /// Equatable conformation
     public static func == (lhs: ImageSize, rhs: ImageSize) -> Bool {
         switch (lhs, rhs) {

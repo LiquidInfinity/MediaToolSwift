@@ -63,6 +63,30 @@ public struct Crop: Equatable, Hashable {
         return .zero
     }
 
+    /// Create scaled crop, all dimensions (origin, size) are multiplied by scale factor
+    internal func scaled(by scale: CGFloat) -> Crop {
+        guard scale != 1.0 else { return self }
+        if let size = self.size, let alignment = self.alignment {
+            return Crop(
+                size: CGSize(width: size.width * scale, height: size.height * scale),
+                aligment: alignment
+            )
+        } else if let rect = self.rect {
+            return Crop(rect: CGRect(
+                x: rect.origin.x * scale,
+                y: rect.origin.y * scale,
+                width: rect.width * scale,
+                height: rect.height * scale
+            ))
+        } else if let origin = self.origin, let size = self.size {
+            return Crop(
+                origin: CGPoint(x: origin.x * scale, y: origin.y * scale),
+                size: CGSize(width: size.width * scale, height: size.height * scale)
+            )
+        }
+        return self
+    }
+
     /// Hashable conformance
     public func hash(into hasher: inout Hasher) {
         hasher.combine("crop")

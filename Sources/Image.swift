@@ -810,6 +810,11 @@ public struct ImageTool {
             method: loadingMethod,
             isAnimated: isAnimated
         )
+        
+        // Load HDR gain map if applicable, static only and heif output
+        if !isAnimated, format == .heif || format == .heif10 {
+            primaryFrame.gainMap = primaryFrame.loadGainMap(url: source, properties: primaryProperties)
+        }
 
         // Update local variables based on loaded image in addition to loaded properties
         if let cgImage = primaryFrame.cgImage {
@@ -1105,6 +1110,22 @@ public struct ImageTool {
             }
         }
 
+        // Apply edits to gain map
+        if let gainMap = primaryFrame.gainMap {
+            let scale = primaryFrame.gainMapScale
+            // Update gain map for primary frame
+            images[primaryIndex].gainMap = gainMap.edit(
+                operations: settings.edit.scaled(by: scale),
+                size: settings.size.scaled(by: scale),
+                shouldResize: primaryFrame.shouldResize,
+                hasAlpha: false, // gain map is L8 grayscale, no alpha
+                preserveAlpha: true, // no alpha to preserve/remove
+                backgroundColor: nil, // no transparency to composite
+                orientation: orientation,
+                index: -1 // extra frame
+            )
+        }
+
         return (images, size)
     }
 
@@ -1217,6 +1238,13 @@ public struct ImageTool {
             }
             if skipGPSMetadata {
                 optionsDict[CIImageRepresentationOption(rawValue: kCGImageMetadataShouldExcludeGPS as String)] = kCFBooleanTrue!
+            }
+
+            // Add HDR gain map if present
+            if let gainMap = primaryFrame.gainMap {
+                if #available(macOS 11, iOS 14.1, tvOS 14, visionOS 1, *) {
+                    optionsDict[.hdrGainMapImage] = gainMap
+                }
             }
 
             do {

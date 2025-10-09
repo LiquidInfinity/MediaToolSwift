@@ -9,6 +9,9 @@ public struct ImageFrame: Equatable, Hashable {
     /// A `CIImage` representing frame, operations in `CIImage`
     public var ciImage: CIImage?
 
+    /// HDR gain map auxiliary image for HEIF/HEIC formats
+    public var gainMap: CIImage?
+
     /// Flag for additional image resizing
     public var shouldResize: Bool = false
 
@@ -42,6 +45,51 @@ public struct ImageFrame: Equatable, Hashable {
         } else {
             return nil
         }
+    }
+
+    /// Scale factor of gain map relative to main image
+    public var gainMapScale: CGFloat {
+        guard let gainMap = gainMap else { return 1.0 }
+
+        let mainWidth: CGFloat
+        if let ciImage = ciImage {
+            mainWidth = ciImage.extent.width
+        } else if let cgImage = cgImage {
+            mainWidth = CGFloat(cgImage.width)
+        } else {
+            return 1.0
+        }
+
+        guard mainWidth > 0 else { return 1.0 }
+        return gainMap.extent.width / mainWidth
+    }
+
+    /// Load and resize gain map to match loaded image dimensions
+    func loadGainMap(url: URL, properties: [CFString: Any]?) -> CIImage? {
+        guard #available(macOS 11, iOS 14.1, tvOS 14, visionOS 1, *) else { return nil }
+
+        guard let gainMap = CIImage(contentsOf: url, options: [.auxiliaryHDRGainMap: true]) else {
+            return nil
+        }
+
+        // Resize if downsampled
+        let originalWidth = properties?[kCGImagePropertyPixelWidth] as? CGFloat ?? 0
+        let loadedWidth: CGFloat
+        if let ciImage = ciImage {
+            loadedWidth = ciImage.extent.width
+        } else if let cgImage = cgImage {
+            loadedWidth = CGFloat(cgImage.width)
+        } else {
+            loadedWidth = 0.0
+        }
+
+        if originalWidth > 0, loadedWidth > 0, originalWidth > loadedWidth {
+            let ratio = loadedWidth / originalWidth
+            let size = CGSize(width: gainMap.extent.width * ratio, height: gainMap.extent.height * ratio)
+            return gainMap.resizing(to: size)
+        }
+
+        return gainMap
     }
 
     /// Load image frame from file
