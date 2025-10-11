@@ -1382,6 +1382,7 @@ public struct ImageTool {
 
             // Insert all the frames
             lazy var context = CIContext(options: [.highQualityDownsample: true])
+            var success = 0
             for index in 0 ..< frames.count {
                 var properties: [CFString: Any]?
                 let frame = frames[index]
@@ -1472,10 +1473,16 @@ public struct ImageTool {
                 // If image was proceed using `CIImage` convert it to `CGImage` instead of using cached `CGImage` at `frame.image`
                 var image: CGImage
                 if let ciImage = frame.ciImage {
-                    // image = context.createCGImage(ciImage, from: ciImage.extent, format: <#T##CIFormat#>, colorSpace: <#T##CGColorSpace?#>)
-                    image = context.createCGImage(ciImage, from: ciImage.extent) ?? frame.cgImage!
+                    // context.createCGImage(ciImage, from: ciImage.extent, format: <#T##CIFormat#>, colorSpace: <#T##CGColorSpace?#>)
+                    if let cgImage = context.createCGImage(ciImage, from: ciImage.extent) ?? frame.cgImage {
+                        image = cgImage
+                    } else {
+                        continue
+                    }
+                } else if let cgImage = frame.cgImage {
+                    image = cgImage
                 } else {
-                    image = frame.cgImage!
+                    continue
                 }
 
                 #if os(macOS)
@@ -1490,10 +1497,11 @@ public struct ImageTool {
                 }
 
                 CGImageDestinationAddImage(destination, image, properties as CFDictionary?)
+                success += 1
             }
 
             // Write
-            if CGImageDestinationFinalize(destination) == false {
+            if success == 0 || CGImageDestinationFinalize(destination) == false {
                 throw CompressionError.failedToSaveImage
             }
         case .custom(let identifier):
