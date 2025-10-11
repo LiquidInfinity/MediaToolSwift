@@ -662,7 +662,7 @@ public struct ImageTool {
     ) throws -> Image {
         return try decode(
             source: source,
-            destination: source.deletingPathExtension().appendingPathExtension("png"), // PNG supports all the features
+            destination: source.deletingPathExtension().appendingPathExtension("heif"), // HEIF supports all the features
             settings: settings,
             skipMetadata: skipMetadata
         )
